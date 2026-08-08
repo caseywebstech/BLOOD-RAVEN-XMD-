@@ -21,11 +21,6 @@ const {
   makeWALegacySocket
 } = require('@whiskeysockets/baileys')
 
-// Use legacy socket for better compatibility
-const {
-  default: makeWALegacySocket
-} = require('@whiskeysockets/baileys')
-
 const l = console.log
 const { getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson } = require('./lib/functions')
 const { AntiDelDB, initializeAntiDeleteSettings, setAnti, getAnti, getAllAntiDeleteSettings, saveContact, loadMessage, getName, getChatSummary, saveGroupMetadata, getGroupMetadata, saveMessageCount, getInactiveGroupMembers, getGroupMembersMessageCount, saveMessage } = require('./data')
@@ -48,7 +43,7 @@ const Crypto = require('crypto')
 const path = require('path')
 const prefix = config.PREFIX
 
-const ownerNumber = ['254112192119']
+const ownerNumber = String(config.OWNER_NUMBER || '').split(',').map(n => n.trim()).filter(Boolean)
 
 const tempDir = path.join(os.tmpdir(), 'cache-temp')
 if (!fs.existsSync(tempDir)) {
@@ -70,16 +65,64 @@ const clearTempDir = () => {
 setInterval(clearTempDir, 5 * 60 * 1000)
 
 //===================SESSION-AUTH============================
-if (!fs.existsSync(__dirname + '/sessions/creds.json')) {
-  if(!config.SESSION_ID) return console.log('Please add your session to SESSION_ID env !!')
-  const sessdata = config.SESSION_ID.replace("JK~", '')
-  const filer = File.fromURL(`https://mega.nz/file/${sessdata}`)
-  filer.download((err, data) => {
-    if(err) throw err
-    fs.writeFile(__dirname + '/sessions/creds.json', data, () => {
-      console.log("Session downloaded ✅")
+// SESSION_ID must be supplied through the environment (never hard-code it).
+// The downloader writes the exported creds atomically before WhatsApp starts.
+const SESSION_DIR = path.join(__dirname, 'sessions')
+const SESSION_CREDS = path.join(SESSION_DIR, 'creds.json')
+
+async function ensureSession() {
+  fs.mkdirSync(SESSION_DIR, { recursive: true })
+
+  if (fs.existsSync(SESSION_CREDS)) {
+    try {
+      const creds = JSON.parse(fs.readFileSync(SESSION_CREDS, 'utf8'))
+      if (creds && creds.me) {
+        return true
+      }
+      console.log('[ ⚠️ ] Existing session credentials look incomplete; refreshing from SESSION_ID.')
+    } catch (e) {
+      console.log('[ ⚠️ ] Existing creds.json is invalid; refreshing from SESSION_ID.')
+    }
+  }
+
+  const rawSession = String(config.SESSION_ID || '').trim()
+  if (!rawSession) {
+    console.error('[ ❌ ] SESSION_ID is not configured. Add it to your environment variables.')
+    return false
+  }
+
+  const sessdata = rawSession.replace(/^JK~/i, '').trim()
+  if (!sessdata) {
+    console.error('[ ❌ ] SESSION_ID is empty after removing the JK~ prefix.')
+    return false
+  }
+
+  try {
+    const filer = File.fromURL(
+      sessdata.startsWith('https://') || sessdata.startsWith('http://')
+        ? sessdata
+        : `https://mega.nz/file/${sessdata}`
+    )
+
+    const data = await new Promise((resolve, reject) => {
+      filer.download((err, buffer) => err ? reject(err) : resolve(buffer))
     })
-  })
+
+    if (!data || !data.length) throw new Error('Downloaded session is empty')
+
+    // Validate before replacing the live credentials.
+    const parsed = JSON.parse(Buffer.from(data).toString('utf8'))
+    if (!parsed || !parsed.me) throw new Error('Downloaded session does not contain valid Baileys credentials')
+
+    const tmp = `${SESSION_CREDS}.tmp`
+    fs.writeFileSync(tmp, data)
+    fs.renameSync(tmp, SESSION_CREDS)
+    console.log('[ ✅ ] Session credentials loaded successfully.')
+    return true
+  } catch (err) {
+    console.error('[ ❌ ] Failed to load SESSION_ID:', err.message || err)
+    return false
+  }
 }
   
 const express = require("express")
@@ -89,14 +132,25 @@ const port = process.env.PORT || 9090
 // Track connection state to prevent multiple welcome messages
 let isFirstConnection = true
 let welcomeSent = false
+let reconnectTimer = null
+let isConnecting = false
 
 //=============================================
 
 async function connectToWA() {
+  if (isConnecting) return
+  isConnecting = true
+
   try {
     console.log("[ ♻️ ] Connecting to WhatsApp ⏳️...")
 
-    const { state, saveCreds } = await useMultiFileAuthState(__dirname + '/sessions/')
+    const sessionReady = await ensureSession()
+    if (!sessionReady) {
+      console.error('[ ❌ ] WhatsApp startup aborted because the session is unavailable.')
+      return
+    }
+
+    const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR)
     
     // Try to get version or use fallback
     let version
@@ -176,31 +230,43 @@ async function connectToWA() {
 
       if (connection === 'close') {
         const statusCode = lastDisconnect?.error?.output?.statusCode
-        const shouldReconnect = statusCode !== DisconnectReason.loggedOut
-        
+        isConnecting = false
+
         if (statusCode === DisconnectReason.loggedOut) {
-          console.log('[ ❌ ] Logged out. Please update your SESSION_ID')
-          // Delete old session to force new login
-          try {
-            fs.unlinkSync(__dirname + '/sessions/creds.json')
-          } catch (e) {}
-        } else {
-          console.log(`[ ⚠️ ] Connection closed (${statusCode}). Attempting to reconnect...`)
-          // Reset welcome flag on disconnect
+          console.log('[ ❌ ] Logged out. Replace SESSION_ID with a fresh session.')
           welcomeSent = false
-          setTimeout(() => connectToWA(), 5000)
+          try {
+            fs.rmSync(SESSION_DIR, { recursive: true, force: true })
+          } catch (e) {
+            console.error('[ ⚠️ ] Could not clear old session:', e.message || e)
+          }
+          return
+        }
+
+        console.log(`[ ⚠️ ] Connection closed (${statusCode ?? 'unknown'}). Reconnecting in 5s...`)
+        welcomeSent = false
+        if (!reconnectTimer) {
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null
+            connectToWA()
+          }, 5000)
         }
       } else if (connection === 'open') {
+        isConnecting = false
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer)
+          reconnectTimer = null
+        }
         try {
           console.log('Connected to WhatsApp successfully ✅')
 
           // Load plugins
-          const pluginsDir = "./plugins/"
+          const pluginsDir = path.join(__dirname, "plugins")
           if (fs.existsSync(pluginsDir)) {
             fs.readdirSync(pluginsDir).forEach((plugin) => {
               if (path.extname(plugin).toLowerCase() === ".js") {
                 try {
-                  require("./plugins/" + plugin)
+                  require(path.join(pluginsDir, plugin))
                   console.log(`[ ✅ ] Plugin loaded: ${plugin}`)
                 } catch (pluginErr) {
                   console.error(`[ ❌ ] Failed to load plugin ${plugin}:`, pluginErr)
@@ -813,8 +879,14 @@ async function connectToWA() {
     
     return conn
   } catch (error) {
+    isConnecting = false
     console.error('Error in connectToWA:', error)
-    setTimeout(() => connectToWA(), 5000) // Retry after 5 seconds
+    if (!reconnectTimer) {
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null
+        connectToWA()
+      }, 5000)
+    }
   }
 }
   
@@ -835,4 +907,4 @@ app.listen(port, '0.0.0.0', () => console.log(`Server listening on port http://0
 
 setTimeout(() => {
   connectToWA()
-}, 8000)
+}, 1000)
