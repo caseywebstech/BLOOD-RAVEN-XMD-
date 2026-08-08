@@ -19,7 +19,8 @@ const {
   makeInMemoryStore,
   jidDecode,
   fetchLatestBaileysVersion,
-  Browsers
+  Browsers,
+  makeCacheableSignalKeyStore
 } = require('@whiskeysockets/baileys')
 
 const l = console.log
@@ -86,13 +87,25 @@ const port = process.env.PORT || 9090
 let isFirstConnection = true
 let welcomeSent = false
 
+// Store for persistent session data
+let sessionStore = null;
+
 //=============================================
 
 async function connectToWA() {
   try {
     console.log("[ ♻️ ] Connecting to WhatsApp ⏳️...")
 
-    const { state, saveCreds } = await useMultiFileAuthState(__dirname + '/sessions/')
+    // Enable persistent session with longer timeout
+    const { state, saveCreds } = await useMultiFileAuthState(
+      __dirname + '/sessions/',
+      {
+        // Increase session persistence
+        logger: P({ level: 'silent' }),
+        store: sessionStore
+      }
+    )
+    
     const { version } = await fetchLatestBaileysVersion()
 
     const conn = makeWASocket({
@@ -101,7 +114,40 @@ async function connectToWA() {
       browser: Browsers.macOS("Firefox"),
       syncFullHistory: true,
       auth: state,
-      version
+      version,
+      // Long session configuration
+      connectTimeoutMs: 60000, // Increase timeout to 60 seconds
+      defaultQueryTimeoutMs: 60000,
+      keepAliveIntervalMs: 30000, // Keep connection alive
+      generateHighQualityLinkPreview: true,
+      // Enable message retry for better reliability
+      getMessage: async (key) => {
+        return loadMessage(key.id)
+      },
+      // Improve session persistence
+      patchMessageBeforeSending: (message) => {
+        const requiresPatch = !!(
+          message.buttonsMessage ||
+          message.templateMessage ||
+          message.listMessage
+        )
+        if (requiresPatch) {
+          message = {
+            viewOnceMessage: {
+              message: {
+                messageContextInfo: {
+                  deviceListMetadataVersion: 2,
+                  deviceListMetadata: {}
+                },
+                ...message
+              }
+            }
+          }
+        }
+        return message
+      },
+      // Mark messages as read for better sync
+      markOnlineOnConnect: true
     })
 
     // Auto Bio Configuration
@@ -132,21 +178,41 @@ async function connectToWA() {
       }
 
       if (connection === 'close') {
-        const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
-        console.log('[ ⚠️ ] Connection closed:', lastDisconnect?.error?.output?.statusCode)
+        const statusCode = lastDisconnect?.error?.output?.statusCode
+        const shouldReconnect = statusCode !== DisconnectReason.loggedOut
+        
+        console.log('[ ⚠️ ] Connection closed:', statusCode)
         
         // Reset welcome flag on disconnect
         welcomeSent = false
         
         if (shouldReconnect) {
-          console.log('[ ♻️ ] Attempting to reconnect...')
-          setTimeout(() => connectToWA(), 5000)
+          // Improved reconnection logic for long session
+          const reconnectDelay = statusCode === DisconnectReason.connectionLost ? 3000 : 5000
+          console.log(`[ ♻️ ] Attempting to reconnect in ${reconnectDelay/1000} seconds...`)
+          
+          // Clear any existing timeout
+          if (global.reconnectTimeout) {
+            clearTimeout(global.reconnectTimeout)
+          }
+          
+          global.reconnectTimeout = setTimeout(() => {
+            connectToWA()
+          }, reconnectDelay)
         } else {
           console.log('[ ❌ ] Logged out. Please update your SESSION_ID')
+          // Clean up on logout
+          if (global.reconnectTimeout) {
+            clearTimeout(global.reconnectTimeout)
+          }
         }
       } else if (connection === 'open') {
         try {
           console.log('Connected to WhatsApp successfully ✅')
+          console.log(`[ 📱 ] Session established: ${new Date().toISOString()}`)
+          
+          // Save session info for persistence
+          sessionStore = state
 
           fs.readdirSync("./plugins/").forEach((plugin) => {
             if (path.extname(plugin).toLowerCase() === ".js") {
@@ -202,7 +268,20 @@ async function connectToWA() {
       }
     })
 
-    conn.ev.on('creds.update', saveCreds)
+    // Enhanced credential saving for long session
+    conn.ev.on('creds.update', async (creds) => {
+      console.log('[ 💾 ] Saving credentials...')
+      try {
+        await saveCreds()
+        // Update session store
+        if (state) {
+          sessionStore = state
+        }
+        console.log('[ ✅ ] Credentials saved successfully')
+      } catch (err) {
+        console.error('[ ❌ ] Error saving credentials:', err)
+      }
+    })
 
     //==============================
     conn.ev.on('messages.update', async updates => {
@@ -786,9 +865,16 @@ async function connectToWA() {
       return status
     }
     conn.serializeM = mek => sms(conn, mek, store)
+    
+    // Return connection for persistence
+    return conn
+    
   } catch (error) {
     console.error('Error in connectToWA:', error)
-    setTimeout(() => connectToWA(), 5000) // Retry after 5 seconds
+    // Retry with exponential backoff for better reliability
+    const retryDelay = Math.min(5000 * Math.pow(2, reconnectAttempts || 0), 60000)
+    console.log(`[ ♻️ ] Retrying in ${retryDelay/1000} seconds...`)
+    setTimeout(() => connectToWA(), retryDelay)
   }
 }
   
