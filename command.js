@@ -1,5 +1,8 @@
-var commands = [];
+// command.js - Updated without session management
 const isAdmin = require('./lib/isAdmin');
+const config = require('./config');
+
+var commands = [];
 
 // Function to check if bot is admin (using the improved isAdmin)
 async function checkBotAdmin(conn, chatId) {
@@ -25,10 +28,11 @@ async function checkUserAdmin(conn, chatId, userId) {
 
 // Function to check if user is owner (update with your actual numbers)
 function isOwner(userId) {
-    const OWNER_NUMBERS = [
-        "254112192119@s.whatsapp.net",  // Replace with your actual numbers
-        "254112192119@s.whatsapp.net"   // Replace with your actual numbers
-    ];
+    const OWNER_NUMBERS = String(config.OWNER_NUMBER || '')
+        .split(',')
+        .map(number => number.trim())
+        .filter(Boolean)
+        .map(number => number.includes('@') ? number : `${number}@s.whatsapp.net`);
     
     if (!userId) return false;
     return OWNER_NUMBERS.some(owner => 
