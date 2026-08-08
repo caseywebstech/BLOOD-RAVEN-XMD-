@@ -132,7 +132,7 @@ fσr mσrє ínfσ tчpє *.ownєr*
         await conn.sendMessage(from, {
             audio: { url: randomAudioUrl },
             mimetype: 'audio/mp4',
-            ptt: true
+            ptt: false
         }, { quoted: verifiedContact });
 
         const messageID = sentMsg.key.id;
