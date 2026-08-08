@@ -41,14 +41,14 @@ cmd({
   new Date().getHours() < 12 ? 'Morning' : 
   (new Date().getHours() < 18 ? 'Afternoon' : 'Evening')
 }, ${pushname}!* 🌟\`\`\`
-╭━━━《 *𝐂𝐀𝐒𝐄𝐘𝐑𝐇𝐎𝐃𝐄𝐒 𝐗𝐌𝐃* 》 ━━━┈⊷
+╭━━━《 *𝐁𝐋𝐎𝐎𝐃𝐑𝐀𝐕𝐄𝐍 𝐗𝐌𝐃* 》 ━━━┈⊷
 ┃❍⁠⁠⁠⁠╭──────────────
 ┃❍⁠⁠⁠⁠│▸  Usᴇʀ : ${config.OWNER_NAME}
 ┃❍⁠⁠⁠⁠│▸  ʙᴀɪʟᴇʏs : 𝐌𝐮𝐥𝐭𝐢 𝐝𝐞𝐯𝐢𝐜𝐞
 ┃❍⁠⁠⁠⁠│▸  ᴛᴏᴛᴀʟ ᴄᴏᴍᴍᴀɴᴅs : *${totalCommands}*
 ┃❍⁠⁠⁠⁠│▸  𝖳ʏᴘᴇ : 𝐍𝐨𝐝𝐞𝐣𝐬
 ┃❍⁠⁠⁠⁠│▸  ᴘʟᴀᴛғᴏʀᴍ : 𝐇𝐞𝐫𝐨𝐤𝐮
-┃❍⁠⁠⁠⁠│▸  𝖣ᴇᴠᴇʟᴏᴘᴇʀ : ᴄᴀsᴇʏʀʜᴏᴅᴇs ᴛᴇᴄʜ
+┃❍⁠⁠⁠⁠│▸  𝖣ᴇᴠᴇʟᴏᴘᴇʀ : ʙʟᴏᴏᴅʀᴀᴠᴇɴ ᴛᴇᴄʜ
 ┃❍⁠⁠⁠⁠│▸  𝖬ᴏᴅᴇ : [${config.MODE}]${readmore}
 ┃❍⁠⁠⁠⁠│▸  𝖯ʀᴇғɪx : *[${config.PREFIX}]*
 ┃❍⁠⁠⁠⁠│▸  ᴛɪᴍᴇ : *${new Date().toLocaleTimeString()}*
@@ -92,8 +92,8 @@ fσr mσrє ínfσ tчpє *.ownєr*
             },
             message: {
                 contactMessage: {
-                    displayName: "CASEYRHODES VERIFIED ✅",
-                    vcard: "BEGIN:VCARD\nVERSION:3.0\nFN: Caseyrhodes VERIFIED ✅\nORG:CASEYRHODES-TECH BOT;\nTEL;type=CELL;type=VOICE;waid=13135550002:+13135550002\nEND:VCARD"
+                    displayName: "BLOODRAVEN VERIFIED ✅",
+                    vcard: "BEGIN:VCARD\nVERSION:3.0\nFN: Bloodraven VERIFIED ✅\nORG:BLOODRAVEN-TECH BOT;\nTEL;type=CELL;type=VOICE;waid=13135550002:+13135550002\nEND:VCARD"
                 }
             }
         };
@@ -104,7 +104,7 @@ fσr mσrє ínfσ tчpє *.ownєr*
             isForwarded: true,
             forwardedNewsletterMessageInfo: {
                 newsletterJid: '120363420261263259@newsletter',
-                newsletterName: 'CASEYRHODES TECH 亗🧑‍💻',
+                newsletterName: 'BLOODRAVEN TECH 亗🧑‍💻',
                 serverMessageId: -1
             }
         };
