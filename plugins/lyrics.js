@@ -3,7 +3,7 @@ const { cmd, commands } = require('../command');
 const axios = require('axios');
 
 cmd({
-    pattern: "lyrics|lyric|songlyrics",
+    pattern: "lyrics",
     desc: "Get song lyrics",
     category: "download",
     react: "🎵",
@@ -33,27 +33,29 @@ cmd({
 
         const song = data.message;
         const lyrics = song.lyrics ? song.lyrics.slice(0, 3000) : 'No lyrics available';
-        const fullLyrics = song.lyrics || '';
+
+        // Get album art or generate a music image
+        let imageUrl = 'https://i.imgur.com/8QmJZ7v.jpeg'; // Default music image
+        
+        // Try to get album art from the API
+        if (song.album_art || song.thumbnail) {
+            imageUrl = song.album_art || song.thumbnail;
+        } else if (song.image) {
+            imageUrl = song.image;
+        }
 
         // Create caption with lyrics
         const caption = `🎵 *${song.title}*\n👤 *${song.artist}*\n\n${lyrics}${lyrics.length >= 3000 ? '...' : ''}\n\n🔗 ${song.url || 'N/A'}\n\n> ${config.DESCRIPTION}`;
 
-        // Try to send with buttons first
+        // Send with image
         try {
             await conn.sendMessage(from, {
-                text: caption,
-                contextInfo: {
-                    forwardingScore: 999,
-                    isForwarded: true,
-                    forwardedNewsletterMessageInfo: {
-                        newsletterJid: '120363420261263259@newsletter',
-                        newsletterName: 'BLOODRAVEN TECH 亗🧑‍💻',
-                        serverMessageId: -1
-                    }
-                }
+                image: { url: imageUrl },
+                caption: caption
             }, { quoted: mek });
-        } catch (err) {
-            // Fallback to simple text if buttons fail
+        } catch (imgErr) {
+            // If image fails, send as text
+            console.error('[Lyrics] Image error:', imgErr.message);
             await conn.sendMessage(from, {
                 text: caption
             }, { quoted: mek });
